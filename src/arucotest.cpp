@@ -6,23 +6,31 @@
 #include <iostream>
 #include <stdio.h>
 
+#include <pylon/InstantCamera.h>
+#include <pylon/PylonImage.h>
+#include <pylon/ImageFormatConverter.h>
+#include <pylon/PylonIncludes.h>
+
 #include "PlaneDetection.h"
 
 int main(int argc, char *argv[])
 {
-    cv::VideoCapture cap;
+    Pylon::PylonInitialize();
+    Pylon::CTlFactory &tlFactory = Pylon::CTlFactory::GetInstance();
+    Pylon::CInstantCamera camera(tlFactory.CreateFirstDevice());
+    // cv::VideoCapture cap;
     cv::Mat image;
 
-    const std::string camIp = "https://172.16.142.74:8080/video"; // Using my phone camera
+    // const std::string camIp = "https://172.16.142.74:8080/video"; // Using my phone camera
 
-    if (!cap.open(camIp))
-    {
-        std::cout << "Error opening video stream or file" << std::endl;
-        return -1;
-    }
+    // if (!cap.open(camIp))
+    // {
+    //     std::cout << "Error opening video stream or file" << std::endl;
+    //     return -1;
+    // }
 
-    double camMat[3][3] = {4.4, 0, 960, 0, 4.4, 540, 0, 0, 1};
-    double distCoeffs[4] = {1, 1, 1, 1};
+    double camMat[3][3] = {2568.3693, 0, 1315.4255, 0, 2570.9603, 1078.3560, 0, 0, 1};
+    double distCoeffs[4] = {0, 0, 0, 0};
 
     cv::Mat cvCamMat(3, 3, 6, camMat);
     cv::Mat cvDistCoeffs(1, 4, 6, distCoeffs);
@@ -40,24 +48,36 @@ int main(int argc, char *argv[])
     addTagPos(tag2Pos, tagSize, objPoints);
     addTagPos(tag3Pos, tagSize, objPoints);
 
-    cv::Ptr<cv::aruco::Dictionary> boardDict = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
+    cv::Ptr<cv::aruco::Dictionary> boardDict = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_1000);
 
     std::vector<int> boardIds({0, 1, 2, 3});
 
-    cv::Ptr<cv::aruco::Board> board = cv::aruco::Board::create(objPoints, boardDict, boardIds);
+    // cv::Ptr<cv::aruco::Board> board = cv::aruco::Board::create(objPoints, boardDict, boardIds);
+    cv::Ptr<cv::aruco::Board> board = cv::aruco::GridBoard::create(5, 7, .030, .006, boardDict);
+
+    Pylon::CGrabResultPtr grab_result;
+    Pylon::CPylonImage pylon_image;
+    Pylon::CImageFormatConverter converter;
+    converter.OutputPixelFormat = Pylon::PixelType_BGR8packed;
+
+    camera.StartGrabbing(Pylon::GrabStrategy_LatestImageOnly);
 
     while (true)
     {
+        camera.RetrieveResult(1000, grab_result);
+        converter.Convert(pylon_image, grab_result);
+        image = cv::Mat(grab_result->GetHeight(), grab_result->GetWidth(), CV_8UC3, (uint8_t *)pylon_image.GetBuffer());
 
-        cap.read(image);
-        // check if we succeeded
-        if (image.empty())
-        {
-            std::cerr << "ERROR! blank frame grabbed\n";
-            break;
-        }
+        // cap.read(image);
+        // // check if we succeeded
+        // if (image.empty())
+        // {
+        //     std::cerr << "ERROR! blank frame grabbed\n";
+        //     break;
+        // }
         std::vector<int> ids;
         std::vector<std::vector<cv::Point2f>> markerCorners;
+        // std::cout << "HERE" << std::endl;
         cv::aruco::detectMarkers(image, board->dictionary, markerCorners, ids);
         if (ids.size() > 0)
         {
@@ -68,6 +88,8 @@ int main(int argc, char *argv[])
             if (valid > 0)
             {
                 cv::aruco::drawAxis(image, cvCamMat, cvDistCoeffs, rvec, tvec, 0.1);
+                if (!isnanf(tvec[0]))
+                    std::cout << tvec << std::endl;
             }
         }
         cv::imshow("Output Window", image);
