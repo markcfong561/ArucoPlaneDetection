@@ -2,6 +2,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/videoio.hpp>
+#include <opencv2/calib3d.hpp>
 
 #include <iostream>
 #include <stdio.h>
@@ -29,31 +30,39 @@ int main(int argc, char *argv[])
     //     return -1;
     // }
 
-    double camMat[3][3] = {2568.3693, 0, 1315.4255, 0, 2570.9603, 1078.3560, 0, 0, 1};
-    double distCoeffs[4] = {0, 0, 0, 0};
+    double camMat[3][3] = {3573.681082, 0, 733.98215, 0, 3572.916732, 576.44937, 0, 0, 1};
+    double distCoeffs[5] = {-0.05969, -0.981368, -0.000368, -0.000843, 19.9579};
 
     cv::Mat cvCamMat(3, 3, 6, camMat);
-    cv::Mat cvDistCoeffs(1, 4, 6, distCoeffs);
+    cv::Mat cvDistCoeffs(1, 5, 6, distCoeffs);
 
     std::vector<std::vector<cv::Point3f>> objPoints;
-    double tagSize = .065;
+    double tagSize = 0.02;
 
     cv::Point3f tag0Pos(0, 0, 0);
-    cv::Point3f tag1Pos(0.21, 0, 0);
-    cv::Point3f tag2Pos(0.42, 0.2, 0);
-    cv::Point3f tag3Pos(0.21, 0.11, 0);
+    cv::Point3f tag1Pos(0.06, 0, 0);
+    cv::Point3f tag2Pos(0, -0.06, 0);
+    cv::Point3f tag3Pos(0.06, -0.06, 0);
 
     addTagPos(tag0Pos, tagSize, objPoints);
     addTagPos(tag1Pos, tagSize, objPoints);
     addTagPos(tag2Pos, tagSize, objPoints);
     addTagPos(tag3Pos, tagSize, objPoints);
 
-    cv::Ptr<cv::aruco::Dictionary> boardDict = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_1000);
+    cv::Ptr<cv::aruco::Dictionary> boardDict = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_100);
 
-    std::vector<int> boardIds({0, 1, 2, 3});
+    std::vector<int> boardIds({0, 2, 1, 3});
 
     // cv::Ptr<cv::aruco::Board> board = cv::aruco::Board::create(objPoints, boardDict, boardIds);
-    cv::Ptr<cv::aruco::Board> board = cv::aruco::GridBoard::create(5, 7, .030, .006, boardDict);
+    // cv::Ptr<cv::aruco::GridBoard> board = cv::aruco::GridBoard::create(5, 7, .030, .006, boardDict);
+
+    // for (int i = 0; i < 4; i++) {
+    //     std::cout << boardIds.at(i) << '\n';
+    //     for (auto point : board->objPoints.at(i)) {
+    //         std::cout << point << '\n';
+    //     }
+    //     std::cout << "\n\n";
+    // }
 
     Pylon::CGrabResultPtr grab_result;
     Pylon::CPylonImage pylon_image;
@@ -61,6 +70,12 @@ int main(int argc, char *argv[])
     converter.OutputPixelFormat = Pylon::PixelType_BGR8packed;
 
     camera.StartGrabbing(Pylon::GrabStrategy_LatestImageOnly);
+
+    std::vector<cv::Point3f> flattenedObjPoints;
+
+    flattenVector(objPoints, flattenedObjPoints);
+
+    // std::cout << flattenedObjPoints;
 
     while (true)
     {
@@ -76,25 +91,41 @@ int main(int argc, char *argv[])
         //     break;
         // }
         std::vector<int> ids;
+        std::vector<cv::Point2f> flattenedMarkerCorners;
         std::vector<std::vector<cv::Point2f>> markerCorners;
         // std::cout << "HERE" << std::endl;
-        cv::aruco::detectMarkers(image, board->dictionary, markerCorners, ids);
+        cv::aruco::detectMarkers(image, boardDict, markerCorners, ids);
+        flattenVector(markerCorners, flattenedMarkerCorners);
         if (ids.size() > 0)
         {
             cv::aruco::drawDetectedMarkers(image, markerCorners, ids);
 
             cv::Vec3d rvec, tvec;
-            int valid = cv::aruco::estimatePoseBoard(markerCorners, ids, board, cvCamMat, cvDistCoeffs, rvec, tvec);
-            if (valid > 0)
+            if (flattenedMarkerCorners.size() == flattenedObjPoints.size())
             {
-                cv::aruco::drawAxis(image, cvCamMat, cvDistCoeffs, rvec, tvec, 0.1);
-                if (!isnanf(tvec[0]))
-                    std::cout << tvec << std::endl;
+                std::vector<cv::Point3f> fixedObjPoints;
+                for (auto id : ids)
+                {
+                    if (id < objPoints.size())
+                        fixedObjPoints.insert(end(fixedObjPoints), begin(objPoints.at(id)), end(objPoints.at(id)));
+                }
+                if (fixedObjPoints.size() == flattenedMarkerCorners.size())
+                {
+                    cv::solvePnP(fixedObjPoints, flattenedMarkerCorners, cvCamMat, cvDistCoeffs, rvec, tvec);
+                    cv::aruco::drawAxis(image, cvCamMat, cvDistCoeffs, rvec, tvec, 0.1);
+                }
             }
+            // int valid = cv::aruco::estimatePoseBoard(markerCorners, ids, board, cvCamMat, cvDistCoeffs, rvec, tvec);
+            // if (valid != 0)
+            // {
+            // if (!isnanf(tvec[0]))
+            // std::cout << tvec << std::endl;
+            // }
         }
         cv::imshow("Output Window", image);
 
-        if (cv::waitKey(1) == 27)
+        if (cv::waitKey(10) == 27)
             break;
     }
+    // Pylon::PylonTerminate();
 }

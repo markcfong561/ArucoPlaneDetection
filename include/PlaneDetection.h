@@ -10,3 +10,11 @@
  */
 void addTagPos(cv::Point3f position, double tagSize, std::vector<std::vector<cv::Point3f>>& objPoints);
 
+/** @brief Flattens the obj points from detectMarkers
+ * @param objPoints obj points from detectMarkers
+ * @param newObjPoints flattened obj points into a single vector
+*/
+void flattenVector(std::vector<std::vector<cv::Point3f>> &objPoints, std::vector<cv::Point3f> &newObjPoints);
+
+void flattenVector(std::vector<std::vector<cv::Point2f>> &objPoints, std::vector<cv::Point2f> &newObjPoints);
+
